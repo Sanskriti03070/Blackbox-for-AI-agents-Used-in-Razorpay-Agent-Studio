@@ -24,3 +24,16 @@ The eventual local setup will remain a single repository with a FastAPI backend,
 ## Next step
 
 The next implementation phase is intentionally not started by this change. It will establish the foundation (project setup, Docker Compose, configuration, migrations, and tests) while preserving the architecture contract.
+
+## Payment simulation (Phase 2)
+
+The backend now includes a PostgreSQL-backed local payment simulation for merchants, customers, subscriptions, payments, refunds, payment links, and persisted recovery messages. It contains no external Razorpay integration and no AI-agent functionality.
+
+Start the local stack and seed its deterministic demonstration data explicitly:
+
+```sh
+docker compose up --build -d
+docker compose exec backend python -m app.simulation.seed
+```
+
+The seed command is idempotent. It is never run automatically at application startup.
