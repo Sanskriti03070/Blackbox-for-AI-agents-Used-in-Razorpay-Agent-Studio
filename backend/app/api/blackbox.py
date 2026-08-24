@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents.repository import get_agent_run, get_agent_trace
-from app.db.session import get_db_session, SessionLocal
+from app.db.session import get_db_session
 
 
 SENSITIVE_KEYS = {"api_key", "authorization", "card_number", "card", "cvv", "secret", "password", "token"}
@@ -67,59 +67,56 @@ router = APIRouter()
 
 @router.get("/black-box/runs/{run_id}", response_model=AgentRunOut)
 def get_run(run_id: UUID, db: Session = Depends(get_db_session)):
-    # Read through a short-lived local session to ensure visibility of committed runs
-    local_db = SessionLocal()
-    try:
-        run = get_agent_run(local_db, run_id)
-        if run is None:
-            raise HTTPException(status_code=404, detail="Agent run not found")
-        events = get_agent_trace(local_db, run.run_id)
-        # sanitize payloads and results
-        sanitized_events = []
-        for ev in events:
-            payload = None
-            result = None
-            if ev.payload is not None:
-                try:
-                    payload = _sanitize_dict(ev.payload)
-                except Exception:
-                    payload = None
-            if ev.result is not None:
-                try:
-                    result = _sanitize_dict(ev.result)
-                except Exception:
-                    result = None
-            sanitized_events.append(
-                AgentTraceEventOut(
-                    id=ev.id,
-                    sequence=ev.sequence,
-                    timestamp=ev.timestamp.isoformat(),
-                    source=ev.source,
-                    event_type=ev.event_type,
-                    duration_ms=ev.duration_ms,
-                    payload=payload,
-                    result=result,
-                    error_text=ev.error_text,
-                )
+    # Use the injected DB session (from dependency) so test overrides work and
+    # transactions/fixtures remain visible to the endpoint during tests.
+    run = get_agent_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+    events = get_agent_trace(db, run.run_id)
+    # sanitize payloads and results
+    sanitized_events = []
+    for ev in events:
+        payload = None
+        result = None
+        if ev.payload is not None:
+            try:
+                payload = _sanitize_dict(ev.payload)
+            except Exception:
+                payload = None
+        if ev.result is not None:
+            try:
+                result = _sanitize_dict(ev.result)
+            except Exception:
+                result = None
+        sanitized_events.append(
+            AgentTraceEventOut(
+                id=ev.id,
+                sequence=ev.sequence,
+                timestamp=ev.timestamp.isoformat(),
+                source=ev.source,
+                event_type=ev.event_type,
+                duration_ms=ev.duration_ms,
+                payload=payload,
+                result=result,
+                error_text=ev.error_text,
             )
-        out = AgentRunOut(
-            run_id=run.run_id,
-            agent_name=run.agent_name,
-            agent_version=run.agent_version,
-            merchant_id=run.merchant_id,
-            customer_id=run.customer_id,
-            subscription_id=run.subscription_id,
-            payment_id=run.payment_id,
-            user_request=run.user_request,
-            status=run.status,
-            selected_action=run.selected_action,
-            confidence=run.confidence,
-            outcome=run.outcome,
-            started_at=run.started_at.isoformat(),
-            completed_at=run.completed_at.isoformat() if run.completed_at else None,
-            error_summary=run.error_summary,
-            events=sanitized_events,
         )
-        return out
-    finally:
-        local_db.close()
+    out = AgentRunOut(
+        run_id=run.run_id,
+        agent_name=run.agent_name,
+        agent_version=run.agent_version,
+        merchant_id=run.merchant_id,
+        customer_id=run.customer_id,
+        subscription_id=run.subscription_id,
+        payment_id=run.payment_id,
+        user_request=run.user_request,
+        status=run.status,
+        selected_action=run.selected_action,
+        confidence=run.confidence,
+        outcome=run.outcome,
+        started_at=run.started_at.isoformat(),
+        completed_at=run.completed_at.isoformat() if run.completed_at else None,
+        error_summary=run.error_summary,
+        events=sanitized_events,
+    )
+    return out
