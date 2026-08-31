@@ -59,6 +59,7 @@ class SubscriptionRecoveryState(TypedDict, total=False):
     messages: list[str]
     selected_action: str | None
     action_result: object | None
+    execution_evidence: dict[str, object] | None
     decision_reason: str | None
     outcome: str | None
     errors: list[str]

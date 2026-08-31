@@ -1,3 +1,4 @@
+import app.agents.subscription_recovery.agent as subscription_recovery_agent_module
 import os
 from collections.abc import Generator
 from sqlalchemy import create_engine, text
@@ -30,3 +31,11 @@ def session(engine: Engine) -> Generator[Session, None, None]:
     test_session = sessionmaker(bind=connection, expire_on_commit=False)()
     yield test_session
     test_session.close(); transaction.rollback(); connection.close()
+
+
+@pytest.fixture(autouse=True)
+def patch_agent_session_local(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure agent-managed sessions (SessionLocal()) share the test transaction."""
+    bind = session.get_bind()
+    test_sessionmaker = sessionmaker(bind=bind, autoflush=False, autocommit=False, expire_on_commit=False)
+    monkeypatch.setattr(subscription_recovery_agent_module, "SessionLocal", test_sessionmaker)

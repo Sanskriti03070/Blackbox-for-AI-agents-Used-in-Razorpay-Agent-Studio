@@ -42,8 +42,22 @@ def execute_action_node(
     action_executor: ActionExecutor | None = None,
 ) -> dict[str, Any]:
     decision = state.get("decision")
+
     if decision is None:
         return {}
+
     if action_executor is None:
-        return {"outcome": "No action executed: action executor is unavailable"}
-    return action_executor.execute(decision, state)
+        return {
+            "outcome": "No action executed: action executor is unavailable"
+        }
+
+    execution_result = action_executor.execute(decision, state)
+
+    return {
+        "selected_action": execution_result.get("selected_action"),
+        "decision_reason": execution_result.get("decision_reason"),
+        "outcome": execution_result.get("outcome"),
+        "action_result": execution_result.get("action_result"),
+        "execution_evidence": execution_result.get("execution_evidence"),
+        "errors": execution_result.get("errors", []),
+    }

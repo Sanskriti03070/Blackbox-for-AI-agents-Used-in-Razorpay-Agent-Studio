@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.simulation import models as simulation_models  # noqa: F401
 
 
 class AgentRunStatus(str, enum.Enum):

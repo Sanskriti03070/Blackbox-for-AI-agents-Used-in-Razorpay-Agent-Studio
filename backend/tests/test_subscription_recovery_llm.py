@@ -176,7 +176,46 @@ def test_agent_run_and_trace_persistence_for_successful_execution(session) -> No
     assert "api_key" not in serialized.lower()
     assert "authorization" not in serialized.lower()
     assert "card_number" not in serialized.lower()
+def test_successful_execution_persists_forensic_evidence_events(session) -> None:
+    customer, subscription, failed, _ = records(session)
 
+    result = run(session, failed, FakeDecisionModel(decision(RecoveryAction.RETRY_PAYMENT)))
+
+    events = get_agent_trace(session, result["run_id"])
+    event_types = [event.event_type for event in events]
+
+    assert "policy_checked" in event_types
+    assert "tool_executed" in event_types
+    assert "state_changed" in event_types
+
+    policy_event = next(e for e in events if e.event_type == "policy_checked")
+    assert policy_event.result["allowed"] is True
+    assert policy_event.result["confidence"] == 0.95
+
+    tool_event = next(e for e in events if e.event_type == "tool_executed")
+    assert tool_event.result["status"] == "executed"
+    assert tool_event.payload["name"] == "retry_payment"
+
+    state_event = next(e for e in events if e.event_type == "state_changed")
+    assert state_event.result["before"]["status"] == "failed"
+    assert state_event.result["after"]["status"] == "captured"
+
+
+def test_rejected_refund_persists_forensic_evidence_without_state_change(session) -> None:
+    _, _, failed, _ = records(session)
+
+    result = run(session, failed, FakeDecisionModel(decision(RecoveryAction.ISSUE_REFUND)))
+
+    events = get_agent_trace(session, result["run_id"])
+    event_types = [event.event_type for event in events]
+
+    assert "policy_checked" in event_types
+    assert "tool_executed" in event_types
+    assert "state_changed" not in event_types
+
+    tool_event = next(e for e in events if e.event_type == "tool_executed")
+    assert tool_event.result["status"] == "rejected"
+    assert tool_event.error_text == "Payment is not refundable"
 
 def test_agent_failure_and_missing_context_are_persisted(session) -> None:
     result = run(None, None, FakeDecisionModel(decision(RecoveryAction.RETRY_PAYMENT)))

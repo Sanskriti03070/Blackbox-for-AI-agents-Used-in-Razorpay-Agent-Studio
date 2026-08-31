@@ -37,6 +37,8 @@ services:
       context: ./frontend
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/app/src
     depends_on:
       backend:
         condition: service_started

@@ -12,6 +12,7 @@ from app.agents.repository import (
     create_agent_run,
     fail_agent_run,
     get_agent_run,
+    update_agent_run_context,
 )
 from app.agents.subscription_recovery.context import (
     SubscriptionRecoveryContextNotFoundError,
@@ -84,7 +85,7 @@ class SubscriptionRecoveryAgent:
                 error_text=error_text,
             )
         except Exception:
-            pass
+            session.rollback()
 
     async def run(self, request: SubscriptionRecoveryRequest) -> SubscriptionRecoveryState:
         state: SubscriptionRecoveryState = {
@@ -177,6 +178,18 @@ class SubscriptionRecoveryAgent:
         try:
             state["context"] = load_subscription_recovery_context(session, state["payment_id"])
             sequence += 1
+            context = state["context"]
+            customer_id = context.get("customer", {}).get("id")
+            subscription_id = context.get("subscription", {}).get("id")
+            try:
+                update_agent_run_context(
+                    session,
+                    run_id,
+                    customer_id=customer_id,
+                    subscription_id=subscription_id,
+                )
+            except Exception:
+                session.rollback()
             self._record_event(
                 session,
                 run_id,
@@ -184,9 +197,9 @@ class SubscriptionRecoveryAgent:
                 "context_loaded",
                 payload=self._run_payload(state),
                 result={
-                    "payment_id": state["payment_id"],
-                    "customer_id": state["customer_id"],
-                    "subscription_id": state["subscription_id"],
+                    "payment_id": state.get("payment_id"),
+                    "customer_id": customer_id,
+                    "subscription_id": subscription_id,
                 },
             )
             model = self._model or OpenAIDecisionModel()
@@ -266,6 +279,60 @@ class SubscriptionRecoveryAgent:
                 "action_selected",
                 payload={"selected_action": selected_action},
                 result={"selected_action": selected_action, "outcome": result.get("outcome")},
+                duration_ms=duration_ms,
+            )
+            sequence += 1
+
+        execution_evidence = result.get("execution_evidence") or {}
+
+        policy_evidence = execution_evidence.get("policy")
+        if policy_evidence is not None:
+            self._record_event(
+                session,
+                run_id,
+                sequence + 1,
+                "policy_checked",
+                payload={"selected_action": selected_action},
+                result=policy_evidence,
+                duration_ms=duration_ms,
+            )
+            sequence += 1
+
+        tool_evidence = execution_evidence.get("tool")
+        if tool_evidence is not None:
+            self._record_event(
+                session,
+                run_id,
+                sequence + 1,
+                "tool_executed",
+                payload={
+                    "name": tool_evidence.get("name"),
+                    "input": tool_evidence.get("input"),
+                },
+                result={
+                    "status": tool_evidence.get("status"),
+                    "result": tool_evidence.get("result"),
+                },
+                error_text=tool_evidence.get("error"),
+                duration_ms=duration_ms,
+            )
+            sequence += 1
+
+        state_change = execution_evidence.get("state_change")
+        if state_change is not None:
+            self._record_event(
+                session,
+                run_id,
+                sequence + 1,
+                "state_changed",
+                payload={
+                    "entity": state_change.get("entity"),
+                    "operation": state_change.get("operation"),
+                },
+                result={
+                    "before": state_change.get("before"),
+                    "after": state_change.get("after"),
+                },
                 duration_ms=duration_ms,
             )
             sequence += 1
