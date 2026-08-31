@@ -1,4 +1,4 @@
-# Blackbox for ai agents used in Razorpay Agent Studio 
+# Blackbox for AI agents used in Razorpay Agent Studio 
 
 AI agents can now take real actions on your behalf — retry a payment, issue a refund, message a customer. That's useful, but it creates a new problem: when an agent does something surprising, how do you actually find out why?
 
